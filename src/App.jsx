@@ -1269,27 +1269,34 @@ function App() {
       const goalScreenY = (goal.y - cameraY) * TILE_SIZE;
 
       if (goalLocked) {
-        // Locked goal - gray with lock icon
-        ctx.fillStyle = '#666';
-        ctx.beginPath();
-        ctx.arc(goalScreenX, goalScreenY, goal.radius * TILE_SIZE, 0, Math.PI * 2);
-        ctx.fill();
+        // Locked goal - door icon
+        // Draw larger background for door
+        ctx.fillStyle = '#4a4a4a';
+        ctx.fillRect(
+          goalScreenX - goal.radius * TILE_SIZE * 1.2,
+          goalScreenY - goal.radius * TILE_SIZE * 1.4,
+          goal.radius * TILE_SIZE * 2.4,
+          goal.radius * TILE_SIZE * 2.8
+        );
 
-        // Lock icon
-        ctx.fillStyle = '#999';
-        ctx.font = `${TILE_SIZE}px Arial`;
+        // Door icon
+        ctx.fillStyle = '#8b4513';
+        ctx.font = `${TILE_SIZE * 1.8}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('🔒', goalScreenX, goalScreenY);
+        ctx.fillText('🚪', goalScreenX, goalScreenY);
 
         // Pulsing effect to indicate it's locked
         ctx.strokeStyle = '#ff6b6b';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         const lockPulse = Math.sin(Date.now() * 0.003) * 0.3 + 0.7;
         ctx.globalAlpha = lockPulse;
-        ctx.beginPath();
-        ctx.arc(goalScreenX, goalScreenY, goal.radius * TILE_SIZE * 1.3, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.strokeRect(
+          goalScreenX - goal.radius * TILE_SIZE * 1.2,
+          goalScreenY - goal.radius * TILE_SIZE * 1.4,
+          goal.radius * TILE_SIZE * 2.4,
+          goal.radius * TILE_SIZE * 2.8
+        );
         ctx.globalAlpha = 1;
       } else {
         // Unlocked goal - golden with rays
@@ -1480,18 +1487,31 @@ function App() {
       }
     }
 
-    // Render keys (larger and more visible)
+    // Render keys (larger and more visible with pulsing effect)
     for (const key of keysArray) {
       if (key.collected) continue;
       const kx = Math.floor(key.x);
       const ky = Math.floor(key.y);
       if (kx >= 0 && kx < GRID_WIDTH && ky >= 0 && ky < GRID_HEIGHT && explored[ky][kx]) {
+        const keyX = key.x * scale;
+        const keyY = key.y * scale;
+        const pulse = Math.sin(Date.now() * 0.004) * 0.5 + 0.5;
+
+        // Glowing background
+        ctx.shadowBlur = 4;
+        ctx.shadowColor = '#00ffff';
+        ctx.fillStyle = `rgba(0, 255, 255, ${0.3 + pulse * 0.3})`;
+        ctx.fillRect(keyX - 3, keyY - 3, 8, 8);
+        ctx.shadowBlur = 0;
+
+        // Key square
         ctx.fillStyle = '#00ffff';
-        ctx.fillRect(key.x * scale - 1.5, key.y * scale - 1.5, 4, 4);
-        // Add border to make it stand out
+        ctx.fillRect(keyX - 2, keyY - 2, 5, 5);
+
+        // White border to make it stand out
         ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(key.x * scale - 1.5, key.y * scale - 1.5, 4, 4);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(keyX - 2, keyY - 2, 5, 5);
       }
     }
 
@@ -1633,10 +1653,38 @@ function App() {
           Level: <span className="highlight">{level}</span>
         </div>
         <div className="ui-stat">
-          Score: <span className="highlight">{score}</span>
+          Score: {(() => {
+            const prevScore = levelStartStatsRef.current.score;
+            const currentScore = score - prevScore;
+            return (
+              <>
+                <span className="highlight" style={{ color: '#8ab4f8' }}>{prevScore}</span>
+                {currentScore > 0 && (
+                  <>
+                    <span style={{ color: '#999' }}> + </span>
+                    <span className="highlight" style={{ color: '#4ecca3' }}>{currentScore}</span>
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
         <div className="ui-stat">
-          Coins: <span className="highlight" style={{ color: '#ffd700' }}>{coins}</span>
+          Coins: {(() => {
+            const prevCoins = levelStartStatsRef.current.coins;
+            const currentCoins = coins - prevCoins;
+            return (
+              <>
+                <span className="highlight" style={{ color: '#d4af37' }}>{prevCoins}</span>
+                {currentCoins > 0 && (
+                  <>
+                    <span style={{ color: '#999' }}> + </span>
+                    <span className="highlight" style={{ color: '#ffd700' }}>{currentCoins}</span>
+                  </>
+                )}
+              </>
+            );
+          })()}
         </div>
         {keysRequired > 0 && (
           <div className="ui-stat">
