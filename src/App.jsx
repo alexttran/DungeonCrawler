@@ -86,7 +86,7 @@ const POWERUP_TYPES = {
     color: '#1abc9c',
     duration: 8000,
     effect: 'vision',
-    multiplier: 2,
+    multiplier: 1.75,
     icon: '👁'
   },
   GHOST: {
@@ -112,6 +112,9 @@ function App() {
   const [keysCollected, setKeysCollected] = useState(0);
   const [keysRequired, setKeysRequired] = useState(0);
   const [activePowerups, setActivePowerups] = useState([]);
+  const transitionStateRef = useRef(null); // null, 'blackout', 'reveal'
+  const transitionProgressRef = useRef(0);
+  const nextLevelRef = useRef(1);
 
   // Generate dungeon with rooms and corridors
   const generateDungeon = (levelNum) => {
@@ -521,6 +524,7 @@ function App() {
       keys: keysArray,
       explored,
       particles,
+      activePowerups: [],
       cameraX: 0,
       cameraY: 0
     };
@@ -556,7 +560,8 @@ function App() {
     if (!gameRef.current) return;
 
     const { player, explored } = gameRef.current;
-    const visionBonus = activePowerups.find(p => p.effect === 'vision')?.multiplier || 1;
+    const currentPowerups = gameRef.current.activePowerups || [];
+    const visionBonus = currentPowerups.find(p => p.effect === 'vision')?.multiplier || 1;
     const visionRadius = BASE_VISION_RADIUS * visionBonus;
 
     const px = Math.floor(player.x);
@@ -637,6 +642,29 @@ function App() {
   const update = (deltaTime) => {
     if (!gameRef.current) return;
 
+    // Handle level transition animations
+    if (transitionStateRef.current === 'blackout') {
+      transitionProgressRef.current += deltaTime * 2; // 0.5 seconds for blackout
+      if (transitionProgressRef.current >= 1) {
+        // Blackout complete, init new level
+        setLevel(nextLevelRef.current);
+        initLevel(nextLevelRef.current);
+        transitionProgressRef.current = 0;
+        transitionStateRef.current = 'reveal';
+      }
+      return; // Don't update game during transition
+    }
+
+    if (transitionStateRef.current === 'reveal') {
+      transitionProgressRef.current += deltaTime * 2; // 0.5 seconds for reveal
+      if (transitionProgressRef.current >= 1) {
+        // Reveal complete
+        transitionStateRef.current = null;
+        transitionProgressRef.current = 0;
+      }
+      return; // Don't update game during transition
+    }
+
     const { player, goal, enemies, grid, powerups, particles } = gameRef.current;
     const keys = keysRef.current;
 
@@ -660,7 +688,8 @@ function App() {
     }
 
     // Apply speed powerup
-    const speedBonus = activePowerups.find(p => p.effect === 'speed')?.multiplier || 1;
+    const currentPowerups = gameRef.current.activePowerups || [];
+    const speedBonus = currentPowerups.find(p => p.effect === 'speed')?.multiplier || 1;
     const speed = BASE_PLAYER_SPEED * speedBonus * deltaTime;
     const newX = player.x + dx * speed;
     const newY = player.y + dy * speed;
@@ -729,14 +758,14 @@ function App() {
       powerup.pulse += deltaTime * 3;
     }
 
-    // Check goal collision (only if all keys collected)
+    // Check goal collision (only if all keys collected and not transitioning)
     const allKeysCollected = keysCollected >= keysRequired;
-    if (allKeysCollected && checkCircleCollision(player.x, player.y, player.radius, goal.x, goal.y, goal.radius)) {
-      const newLevel = level + 1;
-      setLevel(newLevel);
+    if (!transitionStateRef.current && allKeysCollected && checkCircleCollision(player.x, player.y, player.radius, goal.x, goal.y, goal.radius)) {
+      nextLevelRef.current = level + 1;
       setScore(s => s + 1000);
       createParticles(goal.x, goal.y, '#ffd700', 30);
-      initLevel(newLevel);
+      transitionProgressRef.current = 0;
+      transitionStateRef.current = 'blackout';
       return;
     }
 
@@ -916,6 +945,61 @@ function App() {
     gameRef.current.cameraY = Math.max(0, Math.min(player.y - viewHeight / 2, GRID_HEIGHT - viewHeight));
   };
 
+  // Draw circle transition effect (shrinking/expanding vision circle)
+  const drawCircleTransition = (ctx, progress, isBlackout) => {
+    if (!gameRef.current) return;
+
+    const { player, cameraX, cameraY } = gameRef.current;
+    const playerScreenX = (player.x - cameraX) * TILE_SIZE;
+    const playerScreenY = (player.y - cameraY) * TILE_SIZE;
+
+    const currentPowerups = gameRef.current.activePowerups || [];
+    const visionBonus = currentPowerups.find(p => p.effect === 'vision')?.multiplier || 1;
+    const normalVisionRadius = BASE_VISION_RADIUS * visionBonus * TILE_SIZE;
+
+    ctx.save();
+
+    if (isBlackout) {
+      // Vision circle shrinks (darkness expands inward)
+      const currentRadius = normalVisionRadius * (1 - progress);
+
+      // Draw black overlay
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+      // Cut out the shrinking vision circle
+      ctx.globalCompositeOperation = 'destination-out';
+      const gradient = ctx.createRadialGradient(
+        playerScreenX, playerScreenY, currentRadius * 0.5,
+        playerScreenX, playerScreenY, currentRadius
+      );
+      gradient.addColorStop(0, 'rgba(0,0,0,1)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    } else {
+      // Vision circle expands (darkness recedes outward)
+      const currentRadius = normalVisionRadius * progress;
+
+      // Draw black overlay
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+      // Cut out the expanding vision circle
+      ctx.globalCompositeOperation = 'destination-out';
+      const gradient = ctx.createRadialGradient(
+        playerScreenX, playerScreenY, currentRadius * 0.5,
+        playerScreenX, playerScreenY, currentRadius
+      );
+      gradient.addColorStop(0, 'rgba(0,0,0,1)');
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
+    ctx.restore();
+  };
+
   // Render game
   const render = () => {
     const canvas = canvasRef.current;
@@ -930,7 +1014,8 @@ function App() {
 
     const px = player.x;
     const py = player.y;
-    const visionBonus = activePowerups.find(p => p.effect === 'vision')?.multiplier || 1;
+    const currentPowerups = gameRef.current.activePowerups || [];
+    const visionBonus = currentPowerups.find(p => p.effect === 'vision')?.multiplier || 1;
     const visionRadius = BASE_VISION_RADIUS * visionBonus;
 
     // Render tiles
@@ -1251,6 +1336,13 @@ function App() {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     ctx.restore();
+
+    // Draw transition effect
+    if (transitionStateRef.current === 'blackout') {
+      drawCircleTransition(ctx, transitionProgressRef.current, true);
+    } else if (transitionStateRef.current === 'reveal') {
+      drawCircleTransition(ctx, transitionProgressRef.current, false);
+    }
   };
 
   // Render minimap
@@ -1410,6 +1502,13 @@ function App() {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+
+  // Sync activePowerups to gameRef so the game loop can access current values
+  useEffect(() => {
+    if (gameRef.current) {
+      gameRef.current.activePowerups = activePowerups;
+    }
+  }, [activePowerups]);
 
   return (
     <div className="game-container">

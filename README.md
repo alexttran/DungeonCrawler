@@ -83,7 +83,7 @@ A React-based dungeon crawler game with smooth movement, diverse enemy types, po
 
 ### 👁 Enhanced Vision (Teal)
 - **Duration**: 8 seconds
-- **Effect**: 2x vision radius
+- **Effect**: 1.75x vision radius
 - **Score**: +100 points
 
 ### 👻 Ghost Mode (White)
