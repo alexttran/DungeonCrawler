@@ -607,6 +607,46 @@ function App() {
     return dist < r1 + r2;
   };
 
+  // Find nearest free floor space from a position
+  const findNearestFreeSpace = (startX, startY) => {
+    if (!gameRef.current) return { x: startX, y: startY };
+
+    const { grid } = gameRef.current;
+    const playerRadius = gameRef.current.player.radius;
+
+    // Check if current position is already free
+    if (!checkWallCollision(startX, startY, playerRadius)) {
+      return { x: startX, y: startY };
+    }
+
+    // Search outward in expanding circles
+    for (let radius = 1; radius <= 20; radius++) {
+      for (let angle = 0; angle < Math.PI * 2; angle += 0.2) {
+        const testX = startX + Math.cos(angle) * radius;
+        const testY = startY + Math.sin(angle) * radius;
+
+        // Check bounds
+        if (testX < playerRadius || testX >= GRID_WIDTH - playerRadius ||
+            testY < playerRadius || testY >= GRID_HEIGHT - playerRadius) {
+          continue;
+        }
+
+        // Check if this position is free
+        const gridX = Math.floor(testX);
+        const gridY = Math.floor(testY);
+
+        if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT &&
+            grid[gridY][gridX] === TILE.FLOOR &&
+            !checkWallCollision(testX, testY, playerRadius)) {
+          return { x: testX, y: testY };
+        }
+      }
+    }
+
+    // Fallback to start position if no free space found
+    return { x: gameRef.current.player.startX, y: gameRef.current.player.startY };
+  };
+
   // Add powerup effect
   const addPowerup = (typeKey, typeData) => {
     setActivePowerups(prev => {
@@ -632,7 +672,16 @@ function App() {
       gameRef.current.player.ghost = true;
       setTimeout(() => {
         if (gameRef.current?.player) {
-          gameRef.current.player.ghost = false;
+          const player = gameRef.current.player;
+          player.ghost = false;
+
+          // Check if player is stuck in a wall after ghost mode ends
+          if (checkWallCollision(player.x, player.y, player.radius)) {
+            const freeSpace = findNearestFreeSpace(player.x, player.y);
+            player.x = freeSpace.x;
+            player.y = freeSpace.y;
+            createParticles(player.x, player.y, '#ecf0f1', 15);
+          }
         }
       }, typeData.duration);
     }
