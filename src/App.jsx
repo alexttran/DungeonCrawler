@@ -115,6 +115,8 @@ function App() {
   const transitionStateRef = useRef(null); // null, 'blackout', 'reveal'
   const transitionProgressRef = useRef(0);
   const nextLevelRef = useRef(1);
+  const currentLevelRef = useRef(1);
+  const levelStartStatsRef = useRef({ score: 0, coins: 0, keys: 0 });
 
   // Generate dungeon with rooms and corridors
   const generateDungeon = (levelNum) => {
@@ -535,6 +537,46 @@ function App() {
     updateExploration();
   };
 
+  // Reset level when player dies
+  const resetLevel = () => {
+    if (!gameRef.current) return;
+
+    const { player, powerups, coins: coinsArray, keys: keysArray } = gameRef.current;
+
+    // Reset player position
+    player.x = player.startX;
+    player.y = player.startY;
+    player.invincible = false;
+    player.ghost = false;
+
+    // Reset all collectibles to uncollected
+    for (const coin of coinsArray) {
+      coin.collected = false;
+    }
+    for (const key of keysArray) {
+      key.collected = false;
+    }
+    for (const powerup of powerups) {
+      powerup.collected = false;
+    }
+
+    // Revert score and coins to level start values
+    setScore(levelStartStatsRef.current.score);
+    setCoins(levelStartStatsRef.current.coins);
+    setKeysCollected(0);
+    setActivePowerups([]);
+    setDeaths(d => d + 1);
+
+    // Reset exploration
+    const explored = gameRef.current.explored;
+    for (let y = 0; y < GRID_HEIGHT; y++) {
+      for (let x = 0; x < GRID_WIDTH; x++) {
+        explored[y][x] = false;
+      }
+    }
+    updateExploration();
+  };
+
   // Create particle effect
   const createParticles = (x, y, color, count = 10) => {
     if (!gameRef.current) return;
@@ -696,6 +738,7 @@ function App() {
       transitionProgressRef.current += deltaTime * 2; // 0.5 seconds for blackout
       if (transitionProgressRef.current >= 1) {
         // Blackout complete, init new level
+        currentLevelRef.current = nextLevelRef.current;
         setLevel(nextLevelRef.current);
         initLevel(nextLevelRef.current);
         transitionProgressRef.current = 0;
@@ -714,7 +757,7 @@ function App() {
       return; // Don't update game during transition
     }
 
-    const { player, goal, enemies, grid, powerups, particles } = gameRef.current;
+    const { player, goal, enemies, powerups, particles } = gameRef.current;
     const keys = keysRef.current;
 
     // Update active powerups
@@ -810,7 +853,7 @@ function App() {
     // Check goal collision (only if all keys collected and not transitioning)
     const allKeysCollected = keysCollected >= keysRequired;
     if (!transitionStateRef.current && allKeysCollected && checkCircleCollision(player.x, player.y, player.radius, goal.x, goal.y, goal.radius)) {
-      nextLevelRef.current = level + 1;
+      nextLevelRef.current = currentLevelRef.current + 1;
       setScore(s => s + 1000);
       createParticles(goal.x, goal.y, '#ffd700', 30);
       transitionProgressRef.current = 0;
@@ -967,11 +1010,8 @@ function App() {
       // Check collision with player (if not invincible or ghost)
       if (!player.invincible && !player.ghost &&
           checkCircleCollision(player.x, player.y, player.radius, enemy.x, enemy.y, enemy.radius)) {
-        player.x = player.startX;
-        player.y = player.startY;
-        setDeaths(d => d + 1);
-        setActivePowerups([]);
         createParticles(enemy.x, enemy.y, '#e74c3c', 20);
+        resetLevel();
       }
     }
 
@@ -1558,6 +1598,21 @@ function App() {
       gameRef.current.activePowerups = activePowerups;
     }
   }, [activePowerups]);
+
+  // Sync level to ref so game loop always has current level
+  useEffect(() => {
+    currentLevelRef.current = level;
+  }, [level]);
+
+  // Save stats at level start (after state has settled from previous level completion)
+  useEffect(() => {
+    // Only update when level changes (not on every score/coin change)
+    levelStartStatsRef.current = {
+      score: score,
+      coins: coins,
+      keys: 0
+    };
+  }, [level]);
 
   return (
     <div className="game-container">
